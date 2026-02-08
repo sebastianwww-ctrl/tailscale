@@ -1,0 +1,49 @@
+name: Build Tailscale IPA (Unsigned/Fake-Signed)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Tailscale iOS
+        uses: actions/checkout@v4
+        with:
+          repository: tailscale/tailscale-ios
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Build Unsigned Archive
+        run: |
+          # Build the Go-based Tailscale engine
+          go run ./scripts/build-dist.go ios
+          
+          # Build the Xcode project without signing identity
+          xcodebuild -workspace Tailscale.xcworkspace \
+                     -scheme Tailscale \
+                     -sdk iphoneos \
+                     -configuration Release \
+                     -archivePath Tailscale.xcarchive \
+                     CODE_SIGNING_ALLOWED=NO \
+                     CODE_SIGNING_REQUIRED=NO \
+                     CODE_SIGN_IDENTITY="" \
+                     AD_HOC_CODE_SIGNING_ALLOWED=YES \
+                     archive
+
+      - name: Package IPA (Manual)
+        run: |
+          # Manually package the .app folder into an IPA
+          mkdir -p Payload
+          cp -r Tailscale.xcarchive/Products/Applications/Tailscale.app Payload/
+          zip -r Tailscale.ipa Payload/
+
+      - name: Upload Unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: tailscale-unsigned-ipa
+          path: Tailscale.ipa
